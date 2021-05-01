@@ -6,91 +6,202 @@
 #define MICROPHONE3 A2
 #define MICROPHONE4 A3
 #define MICROPHONE5 A6
-#define SERVOPIN 5        // PWM pin of the servo
-#define SAMPLINGTIME 100  // sampling time in [ms]
-#define MICROPHONECOUNT 5 // number of microphones used
+#define SERVOPIN 5
+#define SCALEFACTOR 1000
 
 // object of the servo class
 Servo directionServo;
+
 // servo enable
 bool servoEnable = 1;
 
 // angle of the sound source
-float servoAngle = 90;
+float angle = 0;
 
-// code for sampling 1 analog input taken from https://learn.adafruit.com/adafruit-microphone-amplifier-breakout/measuring-sound-levels
-// (25.12.2020,21:52)
-// modified for usage in a function and using 5 analog inputs
+// ----------------1 Initialize arrays and variables-----------------
+// amplitudes of all microphones
+// NOTE: If these arrays are changed the number of elements given to calculateAverage() AND shiftDataArray() in section 5. must be changed!
+int amplitudes1[] = {0,0,0,0,0,0,0,0,0,0};
+int amplitudes2[] = {0,0,0,0,0,0,0,0,0,0};
+int amplitudes3[] = {0,0,0,0,0,0,0,0,0,0};
+int amplitudes4[] = {0,0,0,0,0,0,0,0,0,0};
+int amplitudes5[] = {0,0,0,0,0,0,0,0,0,0};
 
-// array containing newest analog values
-int amplitudes[MICROPHONECOUNT];
-// array containing minimum values for all analog inputs
-int minimumAmplitudes[MICROPHONECOUNT];
-// array containing maximum values for all analog inputs
-int maximumAmplitudes[MICROPHONECOUNT];
-// array containing all voltages from microphones
-float voltages[MICROPHONECOUNT];
+float average1 = 0; // average over amplitude array 1
+float average2 = 0; // average over amplitude array 2
+float average3 = 0; // average over amplitude array 3
+float average4 = 0; // average over amplitude array 4
+float average5 = 0; // average over amplitude array 5
+// maximum values of amplitude of all microphones, normalized for each average values
+float maximum[] = {0,0,0,0,0};
+// time over which the amplitudes of the microphones should be sampled
+int samplingTime = 100; // sampling time in [ms]
+// array of maxmimum index for determining direction from each cycle until samplingTime has been passed
+int maximumIndexCounter = 0;
+int maximumIndex[150];  // <----- this array size needs to be adjusted when the sampling time is changed
+// rule of thumb for adjustment: samplingTime * 1.5 for safety, as one cycle takes about 1ms
 
-// method for handling the newest analog reading
-// microphoneNumber: the index of the used microphone (for reading/writing from/to arrays)
-void handleAnalogReading(int microphoneNumber){
-  int amplitude = amplitudes[microphoneNumber]; // get current reading from the amplitudes array
-  if(amplitude<1024) {  // only handle valid readings
-    if(amplitude > maximumAmplitudes[microphoneNumber]) { // if a new highest number was recorded
-      maximumAmplitudes[microphoneNumber] = amplitude;  // save maximum value to array
-    }else if(amplitude < minimumAmplitudes[microphoneNumber]) { // if a new lowest number was recorded
-      minimumAmplitudes[microphoneNumber] = amplitude;  // save minimum value to array
-    }
+
+// method to shift all values of an array 1 index right, meaning arr[len-1] (last value) will be overwritten
+void shiftDataArray(int arr[],int len) {
+  int temp = arr[len-1];
+  for(int i=len-1;i>0;i--) {
+    arr[i] = arr[i-1];
   }
+  arr[0] = temp;
 }
 
-// method for handling the sampling process
-void sampleAmplitudes(){
-   // reset minimum and maximum arrays
-   for(int i=0;i<MICROPHONECOUNT;i++){
-      minimumAmplitudes[i] = 0;
-      maximumAmplitudes[i] = 0;
-   }
-   unsigned long startTime= millis();  // save timestamp of beginning
-   do{
-    // read current analog values
-    amplitudes[0] = analogRead(MICROPHONE1);
-    amplitudes[1] = analogRead(MICROPHONE2);
-    amplitudes[2] = analogRead(MICROPHONE3);
-    amplitudes[3] = analogRead(MICROPHONE4);
-    amplitudes[4] = analogRead(MICROPHONE5);
-    // handle current analog values
-    for(int i=0;i<MICROPHONECOUNT;i++){
-      handleAnalogReading(i);
-    }
-   }while(millis() - startTime < SAMPLINGTIME);
-   // calculate voltages for each microphone
-    for(int i=0;i<MICROPHONECOUNT;i++){
-      int peakToPeak = maximumAmplitudes[i] - minimumAmplitudes[i]; // calculate peak to peak difference of amplitudes
-      voltages[i] = (peakToPeak * 5.0) / 1024; // convert to volts (analog input gives value between 0-1024 corresponding to 0-5 V
-    }
-}
-
-// method for determining the angle of the sound source from peak to peak voltages
-void determineServoAngle(){
-  // 1. find maximum value from peak to peak voltages
-  float maximum = 0;
-  int maximumIndex = 0;
-  for(int i=0;i<MICROPHONECOUNT;i++){
-    if(voltages[i]>maximum){ // if a new maximum is found
-      maximum = voltages[i];
-      maximumIndex = i;
+// method to find the highest value in a given array and return the index
+int findMaximumIndex(float arr[],int arrSize) {
+  int index = 0;
+  float currentMax = 0;
+  for(int i=0;i<arrSize;i++){
+    if(arr[i]>currentMax){
+      currentMax = arr[i];
+      index = i;
     }
   }
-  // 2. determine if background noise or actual signal
-  if(maximum>= 3.2){
-    // 3. set angle according to found maximum (in 45° steps for now)
-    servoAngle = 45 * maximumIndex;
-  }
+  return index;
 }
 
-void setup() 
-{
+// method to calculate the average of a given array with given length from values greater than 0
+float calculateAverage(int arr[],int arrLen){
+  float count = 0;  // number of values greater than 0
+  float sum = 0;    // sum of all numbers greater than 0
+  for(int i=0;i<arrLen;i++){
+    if(arr[i]>0){
+      sum+=float(arr[i]);
+      count++;
+    }
+  }
+  return sum/count;
+}
+
+// method to determine the angle based on counters for each microphone
+float calculateAngle(int counter1,int counter2, int counter3, int counter4, int counter5) {
+  //------------------------------TODO: implement function--------------------
+  float counts[] = {counter1,counter2,counter3,counter4,counter5};
+  /**
+  Serial.print(counts[0]);
+  Serial.print(",");
+  Serial.print(counts[1]);
+  Serial.print(",");
+  Serial.print(counts[2]);
+  Serial.print(",");
+  Serial.print(counts[3]);
+  Serial.print(",");
+  Serial.println(counts[4]);*/
+  float finalAngle = 0;
+  int maxIndex = findMaximumIndex(counts,5);
+  finalAngle = maxIndex*45;
+  return finalAngle;
+}
+
+// method to determine the angle of the sound source
+void determineAngle() {
+  // ----------------4.1 save current time stamp-----------------
+  int beginTime = millis();
+  maximumIndexCounter = 0;  // reset maximumIndexCounter
+  do{
+    // ---------------------4.2 read analog values-----------------------
+    int microphone1 = analogRead(MICROPHONE1);
+    int microphone2 = analogRead(MICROPHONE2);
+    int microphone3 = analogRead(MICROPHONE3);
+    int microphone4 = analogRead(MICROPHONE4);
+    int microphone5 = analogRead(MICROPHONE5);
+    // ----------4.3 calculate maximum deviation from average------------
+    // if the average for each microphone is not assigned (first cycle of the program)
+    if(average1==0 && average2==0 && average3==0 && average4==0 && average5==0) {
+      average1 = microphone1;
+      average2 = microphone2;
+      average3 = microphone3;
+      average4 = microphone4;
+      average5 = microphone5;
+    }
+    maximum[0] = abs((microphone1-average1)/average1);
+    maximum[1] = abs((microphone2-average2)/average2);
+    maximum[2] = abs((microphone3-average3)/average3);
+    maximum[3] = abs((microphone4-average4)/average4);
+    maximum[4] = abs((microphone5-average5)/average5);
+    // for debugging purposes
+    Serial.print(maximum[0]);
+    Serial.print(",");
+    Serial.print(maximum[1]);
+    Serial.print(",");
+    Serial.print(maximum[2]);
+    Serial.print(",");
+    Serial.print(maximum[3]);
+    Serial.print(",");
+    Serial.println(maximum[4]);
+    // ----------4.4 shift amplitude arrays and store new amplitude------
+    // shift arrays
+    shiftDataArray(amplitudes1,10);
+    shiftDataArray(amplitudes2,10);
+    shiftDataArray(amplitudes3,10);
+    shiftDataArray(amplitudes4,10);
+    shiftDataArray(amplitudes5,10);
+    // store new amplitudes
+    amplitudes1[0]=microphone1;
+    amplitudes2[0]=microphone2;
+    amplitudes3[0]=microphone3;
+    amplitudes4[0]=microphone4;
+    amplitudes5[0]=microphone5;
+    // --------------------4.5 calculate new averages--------------------
+    average1 = calculateAverage(amplitudes1,10);
+    average2 = calculateAverage(amplitudes2,10);
+    average3 = calculateAverage(amplitudes3,10);
+    average4 = calculateAverage(amplitudes4,10);
+    average5 = calculateAverage(amplitudes5,10);
+    
+    // ----------------4.6 determine highest deviation-------------------
+    // determine current highest deviation and save microphone number to array
+    maximumIndex[maximumIndexCounter]=findMaximumIndex(maximum,5);
+    maximumIndexCounter++;  // increment maximumIndexCounter
+    
+    // --------------------4.7 time < samplingTime?----------------------
+  }while((millis()-beginTime)<samplingTime);
+  // reset maximum occurence counters used in angle determination
+  int counter1=0;
+  int counter2=0;
+  int counter3=0;
+  int counter4=0;
+  int counter5=0;
+  // loop over maxmimumIndex array and count occurences of each microphone
+  for(int i=0;i<maximumIndexCounter;i++){
+    int currentNumber = maximumIndex[i];
+    if(currentNumber==0){       // microphone1
+      counter1++;
+    }else if(currentNumber==1){ // microphone2
+      counter2++;
+    }else if(currentNumber==2){ // microphone3
+      counter3++;
+    }else if(currentNumber==3){ // microphone4
+      counter4++;
+    }else if(currentNumber==4){ // microphone5
+      counter5++;
+    }
+  }
+  // -----------------------4.8 determine angle--------------------------
+  angle = calculateAngle(counter1,counter2,counter3,counter4,counter5);
+  //plotNormal();
+}
+
+void plotNormal() {
+  Serial.print(amplitudes1[0]);
+  Serial.print(",");
+  Serial.print(amplitudes2[0]);
+  Serial.print(",");
+  Serial.print(amplitudes3[0]);
+  Serial.print(",");
+  Serial.print(amplitudes4[0]);
+  Serial.print(",");
+  Serial.print(amplitudes5[0]);
+  Serial.print(",");
+  Serial.println(angle);
+}
+
+void setup() {
+  // -----------------------2 Initialize IO-pins---------------------
   Serial.begin(9600);
   // set up analog inputs
   pinMode(MICROPHONE1,INPUT);
@@ -98,30 +209,23 @@ void setup()
   pinMode(MICROPHONE3,INPUT);
   pinMode(MICROPHONE4,INPUT);
   pinMode(MICROPHONE5,INPUT);
-  if(servoEnable) { // initialize servo if it should be active
+  
+  // ------------------------3 servoEnable?-------------------------
+  if(servoEnable) {
+    // --------------------3.1 Initialize Servo---------------------
     directionServo.attach(SERVOPIN);
-    directionServo.write(servoAngle); // center servo
-    delay(500);
-    directionServo.detach();
+    directionServo.write(90);
   }
 }
 
-void loop() 
-{
-  // sample all microphones
-  sampleAmplitudes();
-  // print mean voltages of each microphone to Serial
-  for(int i=0;i<MICROPHONECOUNT;i++){
-    Serial.print(voltages[i]*100);
-    Serial.print(",");
+void loop() {
+  determineAngle();
+  // do something with angle
+  if(servoEnable) {
+    directionServo.write(angle);
   }
-  Serial.println("");
-  determineServoAngle();
-  if(servoEnable){  // turn servo if it is enabled
-    directionServo.attach(SERVOPIN);
-    directionServo.write(servoAngle);
-    delay(300);
-    directionServo.detach();
-  }
-  delay(100);  // wait 0.4 s
+  // 11. endCondition?
+  // in this case the process repeats itself indefinetely, because it is just for tests
+  // wait for delay
+  delay(500);
 }
